@@ -10,10 +10,6 @@ body {
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-.app-container {
-  min-height: 100vh;
-}
-
 .mail-item {
   transition: all 0.2s ease;
 }
@@ -26,10 +22,6 @@ body {
 .mail-item.unread {
   background-color: #e6f7ff;
   border-left: 3px solid #1890ff;
-}
-
-.mail-item.important {
-  border-left: 3px solid #ff4d4f;
 }
 
 .mail-dialog .ant-modal-content {
@@ -52,17 +44,4 @@ body {
   height: 32px;
   width: 32px;
   object-fit: contain;
-}
-
-/* Optimize modal performance */
-.ant-modal {
-  transition: none !important;
-}
-
-.ant-modal-content {
-  transition: none !important;
-}
-
-.ant-modal-mask {
-  transition: none !important;
 }
