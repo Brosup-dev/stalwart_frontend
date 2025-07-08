@@ -68,14 +68,11 @@ const getSession = () => {
   return session;
 };
 
-const clearSession = () => {
-  localStorage.removeItem(SESSION_KEY);
-};
+
 
 const { Title, Text } = Typography;
 
 function LoginPageContent({ onLogin }: { onLogin: (userData: { fullName: string; expiryDate: string }) => void }) {
-  const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [loginAttempts, setLoginAttempts] = useState(0);

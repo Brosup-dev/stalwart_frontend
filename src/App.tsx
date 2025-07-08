@@ -16,7 +16,6 @@ import {
   ConfigProvider,
   message,
   Dropdown,
-  Menu,
   Select,
   Tooltip
 } from 'antd';
@@ -27,7 +26,6 @@ import {
   BulbFilled,
   ClockCircleOutlined,
   LogoutOutlined,
-  SettingOutlined,
   EyeOutlined,
   ReloadOutlined,
   CopyOutlined,
@@ -48,7 +46,6 @@ const DOMAIN_OPTIONS = [
 
 // Session management constants
 const SESSION_KEY = 'brosup_session';
-const SESSION_DURATION = 12 * 60 * 60 * 1000; // 12 hours in ms
 
 // Session helper functions
 const getSession = () => {
