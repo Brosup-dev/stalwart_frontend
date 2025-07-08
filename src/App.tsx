@@ -65,7 +65,7 @@ const clearSession = () => {
 };
 
 function randomUser() {
-  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
   let result = '';
   for (let i = 0; i < 8 + Math.floor(Math.random() * 4); i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -123,7 +123,7 @@ function App() {
   };
 
   const handleUserSubmit = async () => {
-    if (userInput.trim()) {
+    if (userInput.toLowerCase().trim()) {
       setLoading(true);
       setCheckingStatus('Checking or creating email...');
       const email = `${userInput}`;
@@ -220,7 +220,7 @@ function App() {
     }
   };
 
-  // Hàm gọi API tạo/check user (KHÔNG truyền token)
+  // Hàm gọi API tạo/check user 
   const checkOrCreateUser = async (email: string) => {
     try {
       const res = await axios.post('https://stalwart-backend.onrender.com/create-user', { email });
