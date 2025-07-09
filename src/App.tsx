@@ -5,7 +5,6 @@ import {
   List,
   Modal,
   Button,
-  Input,
   Pagination,
   Avatar,
   Badge,
@@ -85,9 +84,9 @@ const saveInputHistory = (input: string) => {
   localStorage.setItem(INPUT_HISTORY_KEY, JSON.stringify(newHistory));
 };
 
-const clearInputHistory = () => {
-  localStorage.removeItem(INPUT_HISTORY_KEY);
-};
+// const clearInputHistory = () => {
+//   localStorage.removeItem(INPUT_HISTORY_KEY);
+// };
 
 // Theme helper functions
 const getThemeMode = (): boolean => {
