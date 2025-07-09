@@ -17,7 +17,8 @@ import {
   message,
   Dropdown,
   Select,
-  Tooltip
+  Tooltip,
+  AutoComplete
 } from 'antd';
 import {
   MailOutlined,
@@ -30,11 +31,14 @@ import {
   ReloadOutlined,
   CopyOutlined,
   ThunderboltOutlined,
-  DownOutlined
+  DownOutlined,
+  HistoryOutlined,
+  SyncOutlined
 } from '@ant-design/icons';
 import axios from 'axios';
 import logo from './assets/logo.png';
 import LoginPage from './LoginPage';
+import Link from 'antd/es/typography/Link';
 
 const { Header, Content, Footer } = Layout;
 const { Title, Text, Paragraph } = Typography;
@@ -46,6 +50,8 @@ const DOMAIN_OPTIONS = [
 
 // Session management constants
 const SESSION_KEY = 'brosup_session';
+const INPUT_HISTORY_KEY = 'input_history';
+const THEME_KEY = 'theme_mode';
 
 // Session helper functions
 const getSession = () => {
@@ -64,17 +70,46 @@ const clearSession = () => {
   localStorage.removeItem(SESSION_KEY);
 };
 
+// Input history helper functions
+const getInputHistory = (): string[] => {
+  const history = localStorage.getItem(INPUT_HISTORY_KEY);
+  return history ? JSON.parse(history) : [];
+};
+
+const saveInputHistory = (input: string) => {
+  if (!input.trim()) return;
+  
+  const history = getInputHistory();
+  const filteredHistory = history.filter(item => item !== input);
+  const newHistory = [input, ...filteredHistory].slice(0, 10);
+  localStorage.setItem(INPUT_HISTORY_KEY, JSON.stringify(newHistory));
+};
+
+const clearInputHistory = () => {
+  localStorage.removeItem(INPUT_HISTORY_KEY);
+};
+
+// Theme helper functions
+const getThemeMode = (): boolean => {
+  const theme = localStorage.getItem(THEME_KEY);
+  return theme === 'dark';
+};
+
+const saveThemeMode = (isDark: boolean) => {
+  localStorage.setItem(THEME_KEY, isDark ? 'dark' : 'light');
+};
+
 function randomUser() {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
   let result = '';
-  for (let i = 0; i < 8 + Math.floor(Math.random() * 4); i++) {
+  for (let i = 0; i < Math.floor(Math.random() * (20 - 5 + 1)) + 7; i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return result;
 }
 
 function App() {
-  const [isDark, setIsDark] = useState(false);
+  const [isDark, setIsDark] = useState(getThemeMode());
   const [userInput, setUserInput] = useState('');
   const [domain, setDomain] = useState(DOMAIN_OPTIONS[0]);
   const [mails, setMails] = useState<any[]>([]);
@@ -87,8 +122,12 @@ function App() {
   const borderRadiusLG = 8;
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userData, setUserData] = useState<{ fullName: string; expiryDate: string } | null>(null);
+  const [inputHistory, setInputHistory] = useState<string[]>([]);
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const [hasLoadedMails, setHasLoadedMails] = useState(false);
+  const [autoRefreshStartTime, setAutoRefreshStartTime] = useState<number | null>(null);
 
-  // Check for existing session on mount
   useEffect(() => {
     const session = getSession();
     if (session) {
@@ -97,7 +136,49 @@ function App() {
     }
   }, []);
 
-  // Auto logout timer
+  // Load input history on component mount
+  useEffect(() => {
+    setInputHistory(getInputHistory());
+  }, []);
+
+  // Apply theme on mount
+  useEffect(() => {
+    document.body.style.backgroundColor = isDark ? '#1a1a1a' : '#ffffff';
+    document.body.style.color = isDark ? '#e0e0e0' : '#000000';
+  }, [isDark]);
+
+  // Countdown effect
+  useEffect(() => {
+    let countdownInterval: number;
+    
+    if (countdown > 0 && autoRefresh && !loading) {
+      countdownInterval = setInterval(() => {
+        setCountdown(prev => {
+          // Check if auto-refresh has been running for 1 minute
+          if (autoRefreshStartTime && Date.now() - autoRefreshStartTime >= 60000) {
+            setAutoRefresh(false);
+            setAutoRefreshStartTime(null);
+            message.info('Auto-refresh stopped after 1 minute');
+            return 0;
+          }
+          
+          if (prev <= 1) {
+            // Countdown finished, trigger refresh
+            handleRefresh();
+            return 0; // Stop countdown, will restart after fetch completes
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+
+    return () => {
+      if (countdownInterval) {
+        clearInterval(countdownInterval);
+      }
+    };
+  }, [countdown, autoRefresh, loading, autoRefreshStartTime]);
+
   useEffect(() => {
     if (isLoggedIn && userData) {
       const session = getSession();
@@ -117,32 +198,71 @@ function App() {
   }, [isLoggedIn, userData]);
 
   const toggleTheme = () => {
-    setIsDark(!isDark);
-    document.body.style.backgroundColor = isDark ? '#1a1a1a' : '#ffffff';
-    document.body.style.color = isDark ? '#e0e0e0' : '#000000';
+    const newIsDark = !isDark;
+    setIsDark(newIsDark);
+    document.body.style.backgroundColor = newIsDark ? '#1a1a1a' : '#ffffff';
+    document.body.style.color = newIsDark ? '#e0e0e0' : '#000000';
+    saveThemeMode(newIsDark);
+  };
+
+  const saveToHistory = (user: string) => {
+    if (user) {
+      saveInputHistory(user);
+      setInputHistory(getInputHistory());
+    }
+  };
+
+  const toggleAutoRefresh = () => {
+    if (autoRefresh) {
+      // Disable auto-refresh
+      setAutoRefresh(false);
+      setCountdown(0);
+      setAutoRefreshStartTime(null);
+      message.info('Auto-refresh disabled');
+    } else {
+      // Enable auto-refresh
+      setAutoRefresh(true);
+      setCountdown(10);
+      setAutoRefreshStartTime(Date.now());
+      message.success('Auto-refresh enabled (10s interval, will stop after 1 minute)');
+    }
   };
 
   const handleUserSubmit = async () => {
-    if (userInput.toLowerCase().trim()) {
+    const user = userInput.toLowerCase().trim()
+    if (user && !loading) {
+      console.log(user)
       setLoading(true);
       setCheckingStatus('Checking or creating email...');
-      const email = `${userInput}`;
+      const email = `${user}`;
       const status = await checkOrCreateUser(email);
       if (status === 'error') {
         setCheckingStatus('Error while creating/checking email!');
         setLoading(false);
+        // Save to input history even when there's an error
+        saveToHistory(userInput);
         return;
       }
-      const data = await fetchEmails(userInput, 1, mailsPerPage);
+      const data = await fetchEmails(user, 1, mailsPerPage);
       setMails(data.emails);
       setCurrentPage(1);
       setLoading(false);
+      setHasLoadedMails(true); // Mark as successfully loaded
       if (status === 'created') {
         setCheckingStatus('Email created successfully. Loaded inbox!');
       } else if (status === 'exists') {
         setCheckingStatus('Email already exists. Loaded inbox!');
       }
       setTimeout(() => setCheckingStatus(null), 5000);
+      
+      // Auto-enable auto-refresh after successful load
+      setAutoRefresh(true);
+      setCountdown(10);
+      setAutoRefreshStartTime(Date.now());
+      message.success('Auto-refresh enabled (10s interval, will stop after 1 minute)');
+      
+      // Save to input history when successful
+      saveToHistory(userInput);
     }
   };
 
@@ -164,25 +284,51 @@ function App() {
 
   const handleGenerate = () => {
     setUserInput(randomUser());
+    // Disable auto-refresh when generating new username
+    if (autoRefresh) {
+      setAutoRefresh(false);
+      setCountdown(0);
+      setAutoRefreshStartTime(null);
+      message.info('Auto-refresh disabled due to username change');
+    }
   };
 
   const handleCopy = () => {
-    const email = `${userInput}${domain}`;
+    const user = userInput.toLowerCase().trim()
+    const email = `${user}${domain}`;
     navigator.clipboard.writeText(email);
     message.success('Copied: ' + email);
   };
 
   const handleRefresh = async () => {
+    if (loading) return;
+    
     setLoading(true);
-    const data = await fetchEmails(userInput, currentPage, mailsPerPage);
+    const user = userInput.toLowerCase().trim()
+    const data = await fetchEmails(user, currentPage, mailsPerPage);
     setMails(data.emails);
     setLoading(false);
+    setHasLoadedMails(true); // Mark as successfully loaded
     message.success('Mailbox refreshed');
+    
+    // Start countdown after successful refresh if auto-refresh is enabled
+    if (autoRefresh) {
+      // Use setTimeout to ensure this runs after the current execution cycle
+      setTimeout(() => {
+        setCountdown(10);
+      }, 0);
+    }
+    
+    // Save to input history
+    saveToHistory(userInput);
   };
 
   const handlePageChange = async (page: number) => {
+    if (loading) return;
+    
     setLoading(true);
-    const data = await fetchEmails(userInput, page, mailsPerPage);
+    const user = userInput.toLowerCase().trim()
+    const data = await fetchEmails(user, page, mailsPerPage);
     setMails(data.emails);
     setCurrentPage(page);
     setLoading(false);
@@ -205,7 +351,7 @@ function App() {
     ]
   };
 
-  // Hàm lấy danh sách mail
+
   const fetchEmails = async (user: string, page: number, limit: number) => {
     try {
       const res = await axios.get(`https://stalwart-backend.onrender.com/emails?user=${user}&page=${page}&limit=${limit}`);
@@ -220,7 +366,7 @@ function App() {
     }
   };
 
-  // Hàm gọi API tạo/check user 
+ 
   const checkOrCreateUser = async (email: string) => {
     try {
       const res = await axios.post('https://stalwart-backend.onrender.com/create-user', { email });
@@ -255,12 +401,14 @@ function App() {
     >
       <Layout style={{ minHeight: '100vh', background: isDark ? '#1a1a1a' : '#ffffff' }}>
         <Header style={{ padding: '0 16px', background: isDark ? '#262626' : '#fafafa', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: isDark ? '0 2px 8px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.06)', borderBottom: isDark ? '1px solid #404040' : '1px solid #d9d9d9' }}>
-          <Space>
+          <Link href='/'>
+            <Space>
             <img src={logo} alt="Logo" className="app-logo" style={{ height: '28px', width: '28px' }} />
-            <Title level={3} style={{ margin: 0, color: '#ef4444', fontSize: '18px' }}>
+            <Title level={2} style={{ margin: 0, color: '#ef4444', fontSize: '18px' }}>
               Brosup Digital Mailbox
             </Title>
           </Space>
+          </Link>
           <Space>
             <Button type="text" icon={isDark ? <BulbFilled style={{ color: '#ef4444' }} /> : <BulbOutlined style={{ color: '#ef4444' }} />} onClick={toggleTheme} size="large" style={{ color: '#ef4444' }} />
             <Space style={{ alignItems: 'center' }}>
@@ -282,9 +430,9 @@ function App() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', flex: 1, minWidth: 200, gap: 8, alignItems: 'center'}}>
-                    <Input
+                    <AutoComplete
                       value={userInput}
-                      onChange={e => setUserInput(e.target.value)}
+                      onChange={setUserInput}
                       placeholder="Username"
                       size="large"
                       allowClear
@@ -292,6 +440,16 @@ function App() {
                         flex: 2,
                         minWidth: 120
                       }}
+                      options={inputHistory.length > 0 ? inputHistory.map((item) => ({ 
+                        value: item, 
+                        label: (
+                          <Space>
+                            <HistoryOutlined style={{ color: '#ef4444', fontSize: '12px' }} />
+                            <span>{item}</span>
+                          </Space>
+                        )
+                      })) : []}
+                      onSelect={(value) => setUserInput(value)}
                     />
                     <Select
                       value={domain}
@@ -310,12 +468,13 @@ function App() {
                       <Button icon={<CopyOutlined />} onClick={handleCopy} size="large" style={{ color: '#ef4444', padding: '0 8px' }} />
                     </Tooltip>
                     <Tooltip title="Refresh mailbox">
-                      <Button icon={<ReloadOutlined />} onClick={handleRefresh} size="large" loading={loading} disabled={!userInput.trim()} style={{ color: '#ef4444', padding: '0 8px' }} />
+                      <Button icon={<ReloadOutlined />} onClick={handleRefresh} size="large" loading={loading} disabled={!userInput.trim() || loading} style={{ color: '#ef4444', padding: '0 8px' }} />
                     </Tooltip>
                     <Button
                       icon={<ThunderboltOutlined />}
                       onClick={handleGenerate}
                       size="large"
+                      disabled={loading}
                       style={{ color: '#ef4444', padding: '0 12px', borderRadius: 6 }}
                     >
                       Generate
@@ -325,7 +484,7 @@ function App() {
                       size="large"
                       onClick={handleUserSubmit}
                       loading={loading}
-                      disabled={!userInput.trim()}
+                      disabled={!userInput.trim() || loading}
                       style={{ 
                         background: '#ef4444', 
                         borderColor: '#ef4444', 
@@ -377,9 +536,27 @@ function App() {
                 </Space>
               }
               extra={
-                <Text type="secondary" style={{ color: isDark ? '#a0a0a0' : '#666666', fontSize: '12px' }}>
-                  {mails.length} emails
-                </Text>
+                <Space>
+                  <Tooltip title={autoRefresh ? "Click to disable auto-refresh" : "Auto-refresh is disabled"}>
+                    <Button 
+                      icon={autoRefresh ? <SyncOutlined spin /> : <SyncOutlined />} 
+                      onClick={toggleAutoRefresh} 
+                      size="small" 
+                      disabled={!hasLoadedMails}
+                      type={autoRefresh ? "primary" : "default"}
+                      style={{ 
+                        color: autoRefresh ? '#ffffff' : '#ef4444', 
+                        background: autoRefresh ? '#ef4444' : 'transparent',
+                        borderColor: autoRefresh ? '#ef4444' : '#ef4444'
+                      }} 
+                    >
+                      {autoRefresh ? (countdown > 0 ? countdown : 'ON') : 'OFF'}
+                    </Button>
+                  </Tooltip>
+                  <Text type="secondary" style={{ color: isDark ? '#a0a0a0' : '#666666', fontSize: '12px' }}>
+                    {mails.length} emails
+                  </Text>
+                </Space>
               }
               style={{
                 background: isDark ? '#262626' : '#fafafa',
@@ -465,6 +642,7 @@ function App() {
                     showSizeChanger={false}
                     showQuickJumper
                     size="small"
+                    disabled={loading}
                     showTotal={(total, range) =>
                       `${range[0]}-${range[1]} of ${total} items`
                     }
