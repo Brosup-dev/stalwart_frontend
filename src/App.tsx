@@ -45,6 +45,8 @@ const { Title, Text, Paragraph } = Typography;
 
 const DOMAIN_OPTIONS = [
   '@nguyenmail.pro',
+  '@juboro.com',
+  '@lurvon.com',
 ];
 
 // Session management constants
@@ -233,7 +235,7 @@ function App() {
       console.log(user)
       setLoading(true);
       setCheckingStatus('Checking or creating email...');
-      const email = `${user}`;
+      const email = `${user}${domain}`;
       const status = await checkOrCreateUser(email);
       if (status === 'error') {
         setCheckingStatus('Error while creating/checking email!');
@@ -242,7 +244,7 @@ function App() {
         saveToHistory(userInput);
         return;
       }
-      const data = await fetchEmails(user, 1, mailsPerPage);
+      const data = await fetchEmails(email, 1, mailsPerPage);
       setMails(data.emails);
       setCurrentPage(1);
       setLoading(false);
@@ -304,7 +306,8 @@ function App() {
     
     setLoading(true);
     const user = userInput.toLowerCase().trim()
-    const data = await fetchEmails(user, currentPage, mailsPerPage);
+    const email = `${user}${domain}`;
+    const data = await fetchEmails(email, currentPage, mailsPerPage);
     setMails(data.emails);
     setLoading(false);
     setHasLoadedMails(true); // Mark as successfully loaded
@@ -327,7 +330,8 @@ function App() {
     
     setLoading(true);
     const user = userInput.toLowerCase().trim()
-    const data = await fetchEmails(user, page, mailsPerPage);
+    const email = `${user}${domain}`;
+    const data = await fetchEmails(email, page, mailsPerPage);
     setMails(data.emails);
     setCurrentPage(page);
     setLoading(false);
@@ -402,7 +406,7 @@ function App() {
         <Header style={{ padding: '0 16px', background: isDark ? '#262626' : '#fafafa', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: isDark ? '0 2px 8px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.06)', borderBottom: isDark ? '1px solid #404040' : '1px solid #d9d9d9' }}>
           <Link href='/'>
             <Space>
-            <img src={logo} alt="Logo" className="app-logo" style={{ height: '28px', width: '28px' }} />
+            <img src={logo} alt="Logo" className="app-logo" style={{ height: '42px', width: '42px' }} />
             <Title level={2} style={{ margin: 0, color: '#ef4444', fontSize: '18px' }}>
               Brosup Digital Mailbox
             </Title>
