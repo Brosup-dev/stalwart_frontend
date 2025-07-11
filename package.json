@@ -14,10 +14,12 @@
   },
   "dependencies": {
     "@ant-design/icons": "^6.0.0",
+    "@faker-js/faker": "^9.9.0",
     "@headlessui/react": "^2.2.4",
     "@heroicons/react": "^2.2.0",
     "antd": "^5.26.4",
     "axios": "^1.10.0",
+    "dompurify": "^3.2.6",
     "lucide-react": "^0.525.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
