@@ -45,6 +45,7 @@ const { Title, Text, Paragraph } = Typography;
 
 const DOMAIN_OPTIONS = [
   '@nguyenmail.pro',
+  '@brosup.dev',
   '@juboro.com',
   '@lurvon.com',
 ];
