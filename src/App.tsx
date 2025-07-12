@@ -15,11 +15,11 @@ import {
   Typography,
   theme,
   ConfigProvider,
-  message,
   Dropdown,
   Select,
   Tooltip,
   AutoComplete,
+  Alert,
 } from "antd";
 import {
   MailOutlined,
@@ -35,6 +35,7 @@ import {
   DownOutlined,
   HistoryOutlined,
   SyncOutlined,
+  SafetyCertificateOutlined,
 } from "@ant-design/icons";
 import axios from "axios";
 import logo from "./assets/logo.png";
@@ -169,6 +170,19 @@ function App() {
   const [autoRefreshStartTime, setAutoRefreshStartTime] = useState<
     number | null
   >(null);
+  const [notification, setNotification] = useState<{
+    type: 'success' | 'error' | 'warning' | 'info';
+    message: string;
+    visible: boolean;
+  } | null>(null);
+
+  // Custom notification function
+  const showNotification = (type: 'success' | 'error' | 'warning' | 'info', message: string) => {
+    setNotification({ type, message, visible: true });
+    setTimeout(() => {
+      setNotification(null);
+    }, 3000);
+  };
 
   useEffect(() => {
     const session = getSession();
@@ -203,7 +217,7 @@ function App() {
           ) {
             setAutoRefresh(false);
             setAutoRefreshStartTime(null);
-            message.info("Auto-refresh stopped after 1 minute");
+            // showNotification("info", "Auto-refresh stopped after 1 minute");
             return 0;
           }
 
@@ -234,7 +248,7 @@ function App() {
 
       const timeLeft = session.expiresAt - Date.now();
       const logoutTimer = setTimeout(() => {
-        message.warning("Session expired. Please login again.");
+        showNotification("warning", "Session expired. Please login again.");
         handleLogout();
       }, timeLeft);
 
@@ -263,15 +277,13 @@ function App() {
       setAutoRefresh(false);
       setCountdown(0);
       setAutoRefreshStartTime(null);
-      message.info("Auto-refresh disabled");
+      showNotification("info", "Auto-refresh disabled");
     } else {
       // Enable auto-refresh
       setAutoRefresh(true);
       setCountdown(10);
       setAutoRefreshStartTime(Date.now());
-      message.success(
-        "Auto-refresh enabled (10s interval, will stop after 1 minute)"
-      );
+      // showNotification("success", "Auto-refresh enabled (10s interval, will stop after 1 minute)");
     }
   };
 
@@ -286,29 +298,46 @@ function App() {
       if (status === "error") {
         setCheckingStatus("Error while creating/checking email!");
         setLoading(false);
+        // Clear inbox when there's an error
+        setMails([]);
+        setHasLoadedMails(false);
+        showNotification("error", "Failed to create/check email");
         // Save to input history even when there's an error
         saveToHistory(userInput);
         return;
       }
       const data = await fetchEmails(email, 1, mailsPerPage);
-      setMails(data.emails);
-      setCurrentPage(1);
-      setLoading(false);
-      setHasLoadedMails(true); // Mark as successfully loaded
-      if (status === "created") {
-        setCheckingStatus("Email created successfully. Loaded inbox!");
-      } else if (status === "exists") {
-        setCheckingStatus("Email already exists. Loaded inbox!");
+      
+      if (data.emails && data.emails.length >= 0) {
+        setMails(data.emails);
+        setCurrentPage(1);
+        setLoading(false);
+        setHasLoadedMails(true); // Mark as successfully loaded
+        if (status === "created") {
+          setCheckingStatus("Email created successfully. Loaded inbox!");
+          showNotification("success", "Email created and inbox loaded successfully");
+        } else if (status === "exists") {
+          setCheckingStatus("Email already exists. Loaded inbox!");
+          showNotification("success", "Email exists and inbox loaded successfully");
+        }
+        setTimeout(() => setCheckingStatus(null), 5000);
+      } else {
+        // Clear inbox when there's an error
+        setMails([]);
+        setHasLoadedMails(false);
+        setLoading(false);
+        showNotification("error", "Failed to load inbox");
+        return;
       }
-      setTimeout(() => setCheckingStatus(null), 5000);
 
       // Auto-enable auto-refresh after successful load
       setAutoRefresh(true);
       setCountdown(10);
       setAutoRefreshStartTime(Date.now());
-      message.success(
-        "Auto-refresh enabled (10s interval, will stop after 1 minute)"
-      );
+      // showNotification(
+      //   "info",
+      //   "Auto-refresh enabled (10s interval, will stop after 1 minute)"
+      // );
 
       // Save to input history when successful
       saveToHistory(userInput);
@@ -328,25 +357,25 @@ function App() {
     clearSession();
     setIsLoggedIn(false);
     setUserData(null);
-    message.success("Logged out successfully");
+    showNotification("success", "Logged out successfully");
   };
 
   const handleGenerate = () => {
     setUserInput(randomUser());
-    // Disable auto-refresh when generating new username
-    if (autoRefresh) {
-      setAutoRefresh(false);
-      setCountdown(0);
-      setAutoRefreshStartTime(null);
-      message.info("Auto-refresh disabled due to username change");
-    }
+          // Disable auto-refresh when generating new username
+      if (autoRefresh) {
+        setAutoRefresh(false);
+        setCountdown(0);
+        setAutoRefreshStartTime(null);
+        // showNotification("info", "Auto-refresh disabled due to username change");
+      }
   };
 
   const handleCopy = () => {
     const user = userInput.toLowerCase().trim();
     const email = `${user}${domain}`;
     navigator.clipboard.writeText(email);
-    message.success("Copied: " + email);
+    showNotification("success", "Copied: " + email);
   };
 
   const handleRefresh = async () => {
@@ -356,13 +385,22 @@ function App() {
     const user = userInput.toLowerCase().trim();
     const email = `${user}${domain}`;
     const data = await fetchEmails(email, currentPage, mailsPerPage);
-    setMails(data.emails);
+    
+    if (data.emails && data.emails.length >= 0) {
+      setMails(data.emails);
+      setHasLoadedMails(true); // Mark as successfully loaded
+      showNotification("success", "Mailbox refreshed");
+    } else {
+      // Clear inbox when there's an error
+      setMails([]);
+      setHasLoadedMails(false);
+      showNotification("error", "Failed to refresh mailbox");
+    }
+    
     setLoading(false);
-    setHasLoadedMails(true); // Mark as successfully loaded
-    message.success("Mailbox refreshed");
 
     // Start countdown after successful refresh if auto-refresh is enabled
-    if (autoRefresh) {
+    if (autoRefresh && data.emails && data.emails.length >= 0) {
       // Use setTimeout to ensure this runs after the current execution cycle
       setTimeout(() => {
         setCountdown(10);
@@ -380,8 +418,18 @@ function App() {
     const user = userInput.toLowerCase().trim();
     const email = `${user}${domain}`;
     const data = await fetchEmails(email, page, mailsPerPage);
-    setMails(data.emails);
-    setCurrentPage(page);
+    
+    if (data.emails && data.emails.length >= 0) {
+      setMails(data.emails);
+      setCurrentPage(page);
+      showNotification("success", "Page loaded");
+    } else {
+      // Clear inbox when there's an error
+      setMails([]);
+      setHasLoadedMails(false);
+      showNotification("error", "Failed to load page");
+    }
+    
     setLoading(false);
   };
 
@@ -444,6 +492,45 @@ function App() {
     return /<([a-z]+)(\s[^>]*)?>|<!DOCTYPE|<html[\s>]/i.test(str);
   };
 
+  // Function to extract 6 or 8 digit codes from text
+  const extractCodes = (text: string): string[] => {
+    if (!text || typeof text !== "string") return [];
+    
+    // Remove HTML tags if present
+    const cleanText = text.replace(/<[^>]*>/g, '');
+    
+    // Find 6 or 8 digit numbers
+    const codePattern = /\b\d{6}\b|\b\d{8}\b/g;
+    const matches = cleanText.match(codePattern);
+    
+    return matches ? [...new Set(matches)] : [];
+  };
+
+  // Function to copy code from mail
+  const handleCopyCode = async (mail: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    const codes = [
+      ...extractCodes(mail.subject || ''),
+      ...extractCodes(mail.body || '')
+    ];
+    
+    if (codes.length === 0) {
+      showNotification("warning", "No verification codes found in this email");
+      return;
+    }
+    
+    // Copy the first code found
+    const codeToCopy = codes[0];
+    
+    try {
+      await navigator.clipboard.writeText(codeToCopy);
+      showNotification("success", `Code copied: ${codeToCopy}`);
+    } catch (error) {
+      showNotification("error", "Failed to copy code to clipboard");
+    }
+  };
+
   if (!isLoggedIn) {
     return <LoginPage onLogin={handleLogin} />;
   }
@@ -459,6 +546,18 @@ function App() {
         },
       }}
     >
+      {notification && notification.visible && (
+        <div style={{ position: 'fixed', top: 24, left: 0, right: 0, zIndex: 2000, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
+          <Alert
+            message={notification.message}
+            type={notification.type}
+            showIcon
+            closable
+            style={{ minWidth: 320, maxWidth: 480, pointerEvents: 'auto' }}
+            onClose={() => setNotification(null)}
+          />
+        </div>
+      )}
       <Layout
         style={{
           minHeight: "100vh",
@@ -778,6 +877,31 @@ function App() {
                     }}
                     onClick={() => openMail(mail)}
                     actions={[
+                      <Tooltip key="copy-code" title="Copy verification code">
+                        <Button
+                          type="text"
+                          icon={<SafetyCertificateOutlined style={{ color: "#ef4444", fontSize: "14px" }} />}
+                          onClick={(e) => handleCopyCode(mail, e)}
+                          style={{ 
+                            color: "#ef4444",
+                            padding: "4px 8px",
+                            borderRadius: "6px",
+                            transition: "all 0.2s ease"
+                          }}
+                          onMouseEnter={(e) => {
+                            const button = e.currentTarget as HTMLButtonElement;
+                            button.style.background = "rgba(239, 68, 68, 0.1)";
+                            button.style.transform = "scale(1.05)";
+                          }}
+                          onMouseLeave={(e) => {
+                            const button = e.currentTarget as HTMLButtonElement;
+                            button.style.background = "transparent";
+                            button.style.transform = "scale(1)";
+                          }}
+                        >
+                          Code
+                        </Button>
+                      </Tooltip>,
                       <Button
                         key="view"
                         type="text"
