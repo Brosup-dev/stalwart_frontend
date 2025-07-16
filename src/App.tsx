@@ -20,6 +20,8 @@ import {
   Tooltip,
   AutoComplete,
   Alert,
+  InputNumber,
+  Tag,
 } from "antd";
 import {
   MailOutlined,
@@ -36,6 +38,9 @@ import {
   HistoryOutlined,
   SyncOutlined,
   SafetyCertificateOutlined,
+  PlusOutlined,
+  DownloadOutlined,
+  CheckCircleOutlined,
 } from "@ant-design/icons";
 import axios from "axios";
 import logo from "./assets/logo.png";
@@ -175,6 +180,12 @@ function App() {
     message: string;
     visible: boolean;
   } | null>(null);
+  const [quantity, setQuantity] = useState(1);
+  const [results, setResults] = useState<string[]>([]);
+  const [exporting, setExporting] = useState(false);
+  const [isMultiCreateModalOpen, setIsMultiCreateModalOpen] = useState(false);
+  const [isCreatingMails, setIsCreatingMails] = useState(false);
+  const [emailStats, setEmailStats] = useState({ success: 0, errors: 0 });
 
   // Custom notification function
   const showNotification = (type: 'success' | 'error' | 'warning' | 'info', message: string) => {
@@ -239,7 +250,7 @@ function App() {
   }, [countdown, autoRefresh, loading, autoRefreshStartTime]);
 
   useEffect(() => {
-    if (isLoggedIn && userData) {
+    if (isLoggedIn && userData && !isCreatingMails && !isMultiCreateModalOpen) {
       const session = getSession();
       if (!session) {
         handleLogout();
@@ -254,7 +265,7 @@ function App() {
 
       return () => clearTimeout(logoutTimer);
     }
-  }, [isLoggedIn, userData]);
+  }, [isLoggedIn, userData, isCreatingMails, isMultiCreateModalOpen]);
 
   const toggleTheme = () => {
     const newIsDark = !isDark;
@@ -481,6 +492,18 @@ function App() {
     }
   };
 
+  const createMultipleEmails = async (quantity: number, domain: string) => {
+    try {
+      const res = await axios.post(
+        "https://stalwart-backend.onrender.com/create-multiple-emails",
+        { quantity, domain }
+      );
+      return res.data;
+    } catch (err) {
+      throw err;
+    }
+  };
+
   const handleLogin = (userData: { fullName: string; expiryDate: string }) => {
     setUserData(userData);
     setIsLoggedIn(true);
@@ -531,6 +554,152 @@ function App() {
     }
   };
 
+  const handleMultiCreate = async () => {
+    if (loading) return;
+
+    setLoading(true);
+    setIsCreatingMails(true);
+    setResults([]);
+    setCheckingStatus("Creating multiple emails...");
+    
+    try {
+      // Call API to create multiple emails
+      const response = await createMultipleEmails(quantity, domain);
+      
+      // Process results based on new API format
+      const results: string[] = [];
+      let successCount = 0;
+      let errorCount = 0;
+
+      if (response && response.success !== undefined) {
+        // New API format: { success: 8, errors: 1, emails: [...] }
+        const successCount = response.success || 0;
+        const errorCount = response.errors || 0;
+        
+        // Update stats for display
+        setEmailStats({ success: successCount, errors: errorCount });
+        
+        // Add successful emails to results (emails array only contains successful ones)
+        if (response.emails && Array.isArray(response.emails)) {
+          response.emails.forEach((email: string) => {
+            results.push(`${email}`);
+          });
+        }
+        
+
+      } else {
+        // Fallback to individual API calls if bulk API fails
+        setCheckingStatus("Bulk creation failed, trying individual creation...");
+        
+        // Generate random usernames for fallback
+        const users = Array.from({ length: quantity }, () => randomUser());
+        const fallbackEmails = users.map(user => `${user}${domain}`);
+        
+        for (let i = 0; i < fallbackEmails.length; i++) {
+          try {
+            const email = fallbackEmails[i];
+            const status = await checkOrCreateUser(email);
+            
+            if (status === "created") {
+              results.push(`${email} - Created`);
+              successCount++;
+            } else if (status === "exists") {
+              results.push(`${email} - Already exists`);
+              successCount++; // Count as success since email exists
+            } else {
+              results.push(`${email} - Error`);
+              errorCount++;
+            }
+          } catch (error) {
+            results.push(`${fallbackEmails[i]} - Error`);
+            errorCount++;
+          }
+          
+
+          
+          // Add small delay to prevent overwhelming the server
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+
+      setResults(results);
+      
+      
+    } catch (error) {
+      console.error("Error creating multiple emails:", error);
+      showNotification("error", "Failed to create multiple emails. Please try again.");
+      setCheckingStatus("Error creating emails. Please try again.");
+    } finally {
+      setLoading(false);
+      setIsCreatingMails(false);
+      setTimeout(() => setCheckingStatus(null), 5000);
+    }
+  };
+
+  const handleExport = () => {
+    if (exporting) return;
+
+    setExporting(true);
+    
+    const results_emails = results.join("\n");
+    
+    const data = results_emails;
+    const blob = new Blob([data], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `email_results_${new Date().toISOString().split('T')[0]}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    setExporting(false);
+    showNotification("success", "Results exported successfully!");
+  };
+
+  const openMultiCreateModal = () => {
+    setIsMultiCreateModalOpen(true);
+    setQuantity(1);
+    setResults([]);
+  };
+
+  const closeMultiCreateModal = () => {
+    if (isCreatingMails) {
+      showNotification("warning", "Please wait for email creation to complete");
+      return;
+    }
+    
+    // Check if there are results and ask for confirmation
+    if (results.length > 0) {
+      const confirmed = window.confirm(
+        "You have email creation results. Are you sure you want to close? All data will be lost."
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+    
+    setIsMultiCreateModalOpen(false);
+    setResults([]);
+  };
+
+  // Handle beforeunload event
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isCreatingMails) {
+        e.preventDefault();
+        e.returnValue = "Email creation is running. Are you sure you want to leave?";
+        return "Email creation is running. Are you sure you want to leave?";
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isCreatingMails]);
+
   if (!isLoggedIn) {
     return <LoginPage onLogin={handleLogin} />;
   }
@@ -561,20 +730,24 @@ function App() {
       <Layout
         style={{
           minHeight: "100vh",
-          background: isDark ? "#1a1a1a" : "#ffffff",
+          background: isDark ? "#0f0f0f" : "#f8fafc",
         }}
       >
         <Header
           style={{
-            padding: "0 16px",
-            background: isDark ? "#262626" : "#fafafa",
+            padding: "0 24px",
+            background: isDark ? "#1a1a1a" : "#ffffff",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
             boxShadow: isDark
-              ? "0 2px 8px rgba(0,0,0,0.3)"
-              : "0 2px 8px rgba(0,0,0,0.06)",
-            borderBottom: isDark ? "1px solid #404040" : "1px solid #d9d9d9",
+              ? "0 4px 20px rgba(0,0,0,0.4)"
+              : "0 4px 20px rgba(0,0,0,0.08)",
+            borderBottom: isDark ? "1px solid #2a2a2a" : "1px solid #e2e8f0",
+            backdropFilter: "blur(10px)",
+            position: "sticky",
+            top: 0,
+            zIndex: 1000,
           }}
         >
           <Link href="/">
@@ -587,7 +760,13 @@ function App() {
               />
               <Title
                 level={2}
-                style={{ margin: 0, color: "#ef4444", fontSize: "18px" }}
+                style={{ 
+                  margin: 0, 
+                  color: "#ef4444", 
+                  fontSize: "20px",
+                  fontWeight: 700,
+                  letterSpacing: "-0.5px"
+                }}
               >
                 Brosup Digital Mailbox
               </Title>
@@ -641,17 +820,21 @@ function App() {
 
         <Content
           style={{
-            padding: "16px",
-            background: isDark ? "#1a1a1a" : "#fefefe",
+            padding: "24px",
+            background: isDark ? "#0f0f0f" : "#f8fafc",
           }}
         >
           <div style={{ maxWidth: 1200, margin: "0 auto" }}>
             {/* User Input */}
             <Card
               style={{
-                marginBottom: 16,
-                background: isDark ? "#262626" : "#fafafa",
-                border: isDark ? "1px solid #404040" : "1px solid #d9d9d9",
+                marginBottom: 24,
+                background: isDark ? "#1a1a1a" : "#ffffff",
+                border: isDark ? "1px solid #2a2a2a" : "1px solid #e2e8f0",
+                borderRadius: 12,
+                boxShadow: isDark 
+                  ? "0 4px 20px rgba(0,0,0,0.3)" 
+                  : "0 4px 20px rgba(0,0,0,0.06)",
               }}
             >
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -717,13 +900,33 @@ function App() {
                       styles={{ popup: { root: { minWidth: 120 } } }}
                     />
                   </div>
-                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <Tooltip title="Copy email address">
                       <Button
                         icon={<CopyOutlined />}
                         onClick={handleCopy}
                         size="large"
-                        style={{ color: "#ef4444", padding: "0 8px" }}
+                        style={{ 
+                          color: "#ef4444", 
+                          padding: "0 12px",
+                          borderRadius: 8,
+                          height: "40px",
+                          border: "1px solid #ef4444",
+                          background: "transparent",
+                          transition: "all 0.2s ease"
+                        }}
+                        onMouseEnter={(e) => {
+                          const button = e.currentTarget as HTMLButtonElement;
+                          button.style.background = "#ef4444";
+                          button.style.color = "#ffffff";
+                          button.style.transform = "translateY(-1px)";
+                        }}
+                        onMouseLeave={(e) => {
+                          const button = e.currentTarget as HTMLButtonElement;
+                          button.style.background = "transparent";
+                          button.style.color = "#ef4444";
+                          button.style.transform = "translateY(0)";
+                        }}
                       />
                     </Tooltip>
                     <Tooltip title="Refresh mailbox">
@@ -733,7 +936,31 @@ function App() {
                         size="large"
                         loading={loading}
                         disabled={!userInput.trim() || loading}
-                        style={{ color: "#ef4444", padding: "0 8px" }}
+                        style={{ 
+                          color: "#ef4444", 
+                          padding: "0 12px",
+                          borderRadius: 8,
+                          height: "40px",
+                          border: "1px solid #ef4444",
+                          background: "transparent",
+                          transition: "all 0.2s ease"
+                        }}
+                        onMouseEnter={(e) => {
+                          const button = e.currentTarget as HTMLButtonElement;
+                          if (!button.disabled) {
+                            button.style.background = "#ef4444";
+                            button.style.color = "#ffffff";
+                            button.style.transform = "translateY(-1px)";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          const button = e.currentTarget as HTMLButtonElement;
+                          if (!button.disabled) {
+                            button.style.background = "transparent";
+                            button.style.color = "#ef4444";
+                            button.style.transform = "translateY(0)";
+                          }
+                        }}
                       />
                     </Tooltip>
                     <Button
@@ -743,11 +970,69 @@ function App() {
                       disabled={loading}
                       style={{
                         color: "#ef4444",
-                        padding: "0 12px",
-                        borderRadius: 6,
+                        padding: "0 16px",
+                        borderRadius: 8,
+                        height: "40px",
+                        border: "1px solid #ef4444",
+                        background: "transparent",
+                        fontWeight: 500,
+                        transition: "all 0.2s ease"
+                      }}
+                      onMouseEnter={(e) => {
+                        const button = e.currentTarget as HTMLButtonElement;
+                        if (!button.disabled) {
+                          button.style.background = "#ef4444";
+                          button.style.color = "#ffffff";
+                          button.style.transform = "translateY(-1px)";
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        const button = e.currentTarget as HTMLButtonElement;
+                        if (!button.disabled) {
+                          button.style.background = "transparent";
+                          button.style.color = "#ef4444";
+                          button.style.transform = "translateY(0)";
+                        }
                       }}
                     >
                       Generate
+                    </Button>
+                    <Button
+                      icon={<PlusOutlined />}
+                      onClick={openMultiCreateModal}
+                      size="large"
+                      disabled={loading}
+                      variant="dashed"
+                      style={{
+                        color: "#ef4444",
+                        borderColor: "#ef4444",
+                        padding: "0 20px",
+                        borderRadius: 8,
+                        fontWeight: 600,
+                        height: "40px",
+                        fontSize: "14px",
+                        transition: "all 0.2s ease"
+                      }}
+                      onMouseEnter={(e) => {
+                        const button = e.currentTarget as HTMLButtonElement;
+                        if (!button.disabled) {
+                          button.style.background = "#ef4444";
+                          button.style.color = "#ffffff";
+                          button.style.transform = "translateY(-1px)";
+                          button.style.boxShadow = "0 4px 12px rgba(239, 68, 68, 0.3)";
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        const button = e.currentTarget as HTMLButtonElement;
+                        if (!button.disabled) {
+                          button.style.background = "transparent";
+                          button.style.color = "#ef4444";
+                          button.style.transform = "translateY(0)";
+                          button.style.boxShadow = "none";
+                        }
+                      }}
+                    >
+                      Create Multiple
                     </Button>
                     <Button
                       type="primary"
@@ -758,9 +1043,12 @@ function App() {
                       style={{
                         background: "#ef4444",
                         borderColor: "#ef4444",
-                        padding: "0 16px",
-                        borderRadius: 6,
-                        transition: "all 0.3s ease",
+                        padding: "0 20px",
+                        borderRadius: 8,
+                        height: "40px",
+                        fontWeight: 600,
+                        fontSize: "14px",
+                        transition: "all 0.2s ease",
                       }}
                       onMouseEnter={(e) => {
                         const button = e.currentTarget as HTMLButtonElement;
@@ -789,6 +1077,8 @@ function App() {
               </div>
             </Card>
 
+
+
             {checkingStatus && (
               <Typography.Text
                 style={{
@@ -806,14 +1096,22 @@ function App() {
             <Card
               title={
                 <Space>
-                  <MailOutlined style={{ color: "#ef4444" }} />
-                  <span style={{ color: isDark ? "#e0e0e0" : "#000000" }}>
+                  <MailOutlined style={{ color: "#ef4444", fontSize: "18px" }} />
+                  <span style={{ 
+                    color: isDark ? "#e0e0e0" : "#000000",
+                    fontSize: "18px",
+                    fontWeight: 600
+                  }}>
                     Inbox
                   </span>
                   {unreadCount > 0 && (
                     <Badge
                       count={unreadCount}
-                      style={{ backgroundColor: "#ef4444" }}
+                      style={{ 
+                        backgroundColor: "#ef4444",
+                        fontSize: "12px",
+                        fontWeight: 600
+                      }}
                     />
                   )}
                 </Space>
@@ -856,8 +1154,12 @@ function App() {
                 </Space>
               }
               style={{
-                background: isDark ? "#262626" : "#fafafa",
-                border: isDark ? "1px solid #404040" : "1px solid #d9d9d9",
+                background: isDark ? "#1a1a1a" : "#ffffff",
+                border: isDark ? "1px solid #2a2a2a" : "1px solid #e2e8f0",
+                borderRadius: 12,
+                boxShadow: isDark 
+                  ? "0 4px 20px rgba(0,0,0,0.3)" 
+                  : "0 4px 20px rgba(0,0,0,0.06)",
               }}
             >
               <List
@@ -866,14 +1168,15 @@ function App() {
                   <List.Item
                     className={`mail-item ${!mail.isRead ? "unread" : ""}`}
                     style={{
-                      padding: "12px",
+                      padding: "16px",
                       cursor: "pointer",
-                      borderRadius: borderRadiusLG,
-                      marginBottom: 8,
-                      background: isDark ? "#262626" : "#ffffff",
+                      borderRadius: 10,
+                      marginBottom: 12,
+                      background: isDark ? "#1a1a1a" : "#ffffff",
                       border: isDark
-                        ? "1px solid #404040"
-                        : "1px solid #d9d9d9",
+                        ? "1px solid #2a2a2a"
+                        : "1px solid #e2e8f0",
+                      transition: "all 0.2s ease",
                     }}
                     onClick={() => openMail(mail)}
                     actions={[
@@ -950,7 +1253,7 @@ function App() {
                               strong={!mail.isRead}
                               style={{
                                 color: isDark ? "#e0e0e0" : "#000000",
-                                fontSize: "13px",
+                                fontSize: "16px",
                               }}
                             >
                               {mail.subject}
@@ -1024,10 +1327,11 @@ function App() {
         <Footer
           style={{
             textAlign: "center",
-            background: isDark ? "#262626" : "#f8f9fa",
-            borderTop: isDark ? "1px solid #404040" : "1px solid #e8e8e8",
+            background: isDark ? "#1a1a1a" : "#ffffff",
+            borderTop: isDark ? "1px solid #2a2a2a" : "1px solid #e2e8f0",
             color: isDark ? "#a0a0a0" : "#666666",
-            padding: "16px",
+            padding: "24px",
+            marginTop: "auto",
           }}
         >
           <div style={{ maxWidth: 1200, margin: "0 auto" }}>
@@ -1186,6 +1490,312 @@ function App() {
               )}
             </div>
           )}
+        </Modal>
+
+        {/* Multi Mail Creation Modal */}
+        <Modal
+          title={
+            <div style={{ 
+              display: "flex", 
+              alignItems: "center", 
+              gap: 12,
+              padding: "8px 0"
+            }}>
+              <div style={{
+                width: "40px",
+                height: "40px",
+                borderRadius: "50%",
+                background: "#ef4444",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}>
+                <PlusOutlined style={{ color: "#ffffff", fontSize: "18px" }} />
+              </div>
+              <span style={{ 
+                color: isDark ? "#e0e0e0" : "#000000", 
+                fontSize: "20px",
+                fontWeight: 700,
+                letterSpacing: "-0.5px"
+              }}>
+                Create Multiple Emails
+              </span>
+            </div>
+          }
+          open={isMultiCreateModalOpen}
+          onCancel={closeMultiCreateModal}
+          width="90%"
+          style={{ maxWidth: 900 }}
+          footer={null}
+          destroyOnClose={true}
+          maskClosable={false}
+          closable={true}
+          centered={true}
+        >
+          <div style={{ color: isDark ? "#e0e0e0" : "#000000" }}>
+            {/* Input Section */}
+            <div style={{ marginBottom: 32 }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 20,
+                  justifyContent: "space-around",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  marginBottom: 20,
+                  padding: "24px",
+                  background: isDark ? "#1a1a1a" : "#f8fafc",
+                  borderRadius: 12,
+                  border: isDark ? "1px solid #2a2a2a" : "1px solid #e2e8f0",
+                }}
+              >
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <Text strong style={{ 
+                        color: isDark ? "#e0e0e0" : "#000000",
+                        fontSize: "14px",
+                        minWidth: "80px"
+                      }}>
+                        Quantity:
+                      </Text>
+                      <InputNumber
+                        min={1}
+                        max={100}
+                        value={quantity}
+                        onChange={(value) => setQuantity(value || 1)}
+                        size="large"
+                        style={{ 
+                          width: 120,
+                          borderRadius: 8,
+                          border: isDark ? "1px solid #2a2a2a" : "1px solid #e2e8f0"
+                        }}
+                        disabled={loading}
+                        placeholder="1-100"
+                      />
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <Text strong style={{ 
+                        color: isDark ? "#e0e0e0" : "#000000",
+                        fontSize: "14px",
+                        minWidth: "80px"
+                      }}>
+                        Domain:
+                      </Text>
+                      <Select
+                        value={domain}
+                        onChange={setDomain}
+                        size="large"
+                        style={{ 
+                          width: 200,
+                          borderRadius: 8
+                        }}
+                        options={DOMAIN_OPTIONS.map((d) => ({
+                          value: d,
+                          label: d,
+                        }))}
+                        disabled={loading}
+                      />
+                    </div>
+                  </div>
+                                  <Button
+                    type="primary"
+                    icon={<PlusOutlined />}
+                    onClick={handleMultiCreate}
+                    loading={loading}
+                    disabled={loading || quantity < 1 || quantity > 100}
+                    size="large"
+                    style={{
+                      background: "#ef4444",
+                      borderColor: "#ef4444",
+                      padding: "0 24px",
+                      borderRadius: 8,
+                      height: "40px",
+                      fontWeight: 600,
+                      fontSize: "14px",
+                      transition: "all 0.2s ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      const button = e.currentTarget as HTMLButtonElement;
+                      if (!button.disabled) {
+                        button.style.background = "#dc2626";
+                        button.style.borderColor = "#dc2626";
+                        button.style.transform = "translateY(-1px)";
+                        button.style.boxShadow = "0 4px 12px rgba(239, 68, 68, 0.3)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      const button = e.currentTarget as HTMLButtonElement;
+                      if (!button.disabled) {
+                        button.style.background = "#ef4444";
+                        button.style.borderColor = "#ef4444";
+                        button.style.transform = "translateY(0)";
+                        button.style.boxShadow = "none";
+                      }
+                    }}
+                  >
+                    Create {quantity} Emails
+                  </Button>
+              </div>
+
+              
+            </div>
+
+            {/* Results Display */}
+            {results.length > 0 && !loading && (
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: 16,
+                  }}
+                >
+                  <Space>
+                    <Text
+                      strong
+                      style={{ color: isDark ? "#e0e0e0" : "#000000" }}
+                    >
+                      Results:
+                    </Text>
+                                              <Tag color="success">
+                          {emailStats.success} Created
+                        </Tag>
+                        <Tag color="error">
+                          {emailStats.errors} Errors
+                        </Tag>
+                  </Space>
+                  <Space>
+                    <Button
+                      icon={<DownloadOutlined />}
+                      onClick={handleExport}
+                      loading={exporting}
+                      disabled={exporting}
+                      size="small"
+                      style={{ 
+                        color: "#ef4444", 
+                        borderColor: "#ef4444",
+                        borderRadius: 6,
+                        fontWeight: 500,
+                        height: "32px",
+                        padding: "0 12px"
+                      }}
+                    >
+                      Export TXT
+                    </Button>
+                  </Space>
+                </div>
+                                  <div
+                    style={{
+                      maxHeight: 400,
+                      overflowY: "auto",
+                      border: isDark ? "1px solid #2a2a2a" : "1px solid #e2e8f0",
+                      borderRadius: 12,
+                      padding: 16,
+                      background: isDark ? "#1a1a1a" : "#ffffff",
+                      boxShadow: isDark 
+                        ? "inset 0 2px 8px rgba(0,0,0,0.2)" 
+                        : "inset 0 2px 8px rgba(0,0,0,0.04)",
+                    }}
+                  >
+                  {results.map((result, index) => (
+                                            <div
+                          key={index}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 12,
+                            padding: 2,
+                            fontSize: "14px",
+                            borderRadius: 8,
+                          }}
+                        >
+                                              <CheckCircleOutlined style={{ color: "#52c41a", fontSize: "14px" }} />
+                      <Text
+                        style={{
+                          color: isDark ? "#e0e0e0" : "#000000",
+                          fontSize: "13px",
+                          flex: 1,
+                        }}
+                      >
+                        {result}
+                      </Text>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Loading State */}
+            {loading && (
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: "40px 20px",
+                  color: isDark ? "#e0e0e0" : "#000000",
+                }}
+              >
+                <div style={{ marginBottom: 24 }}>
+                  <SyncOutlined 
+                    spin 
+                    style={{ 
+                      fontSize: "48px", 
+                      color: "#ef4444",
+                      marginBottom: 16 
+                    }} 
+                  />
+                  <div style={{ fontSize: "18px", fontWeight: 600, marginBottom: 12 }}>
+                    Creating Multiple Emails...
+                  </div>
+                  <div style={{ fontSize: "14px", color: isDark ? "#a0a0a0" : "#666666", marginBottom: 16 }}>
+                    Please do not close this window or navigate away from the page
+                  </div>
+                  <Alert
+                    message="Important Notice"
+                    description={`Email creation may take a very long time, especially when creating many emails. The more emails you create, the longer it will take. Please do not close the browser or refresh the page during this process. Your emails are being created in the background.`}
+                    type="warning"
+                    showIcon
+                    style={{ 
+                      textAlign: "left",
+                      marginBottom: 16,
+                      background: isDark ? "#1a1a1a" : "#fffbe6",
+                      border: isDark ? "1px solid #404040" : "1px solid #ffe58f"
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Empty State */}
+            {results.length === 0 && !loading && (
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: "60px 20px",
+                  color: isDark ? "#a0a0a0" : "#666666",
+                }}
+              >
+                <div style={{
+                  width: "80px",
+                  height: "80px",
+                  borderRadius: "50%",
+                  background: isDark ? "#2a2a2a" : "#f1f5f9",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  margin: "0 auto 24px",
+                }}>
+                  <PlusOutlined style={{ fontSize: "32px", color: "#ef4444", opacity: 0.7 }} />
+                </div>
+                <div style={{ fontSize: "18px", marginBottom: 12, fontWeight: 600 }}>
+                  Ready to create multiple emails
+                </div>
+                <div style={{ fontSize: "14px", opacity: 0.8, maxWidth: "400px", margin: "0 auto" }}>
+                  Set the quantity and domain, then click "Create" to start generating your emails
+                </div>
+              </div>
+            )}
+          </div>
         </Modal>
       </Layout>
     </ConfigProvider>
