@@ -298,8 +298,37 @@ function App() {
     }
   };
 
+  // Function to parse email and extract username and domain
+  const parseEmail = (input: string | undefined) => {
+    // Handle undefined or null input
+    if (!input) return null;
+    
+    const trimmedInput = input.trim();
+    
+    // Check if input contains @ symbol (is an email)
+    if (trimmedInput.includes('@')) {
+      const parts = trimmedInput.split('@');
+      if (parts.length === 2) {
+        const username = parts[0].toLowerCase();
+        const inputDomain = `@${parts[1].toLowerCase()}`;
+        
+        // Check if domain exists in our options
+        const matchedDomain = DOMAIN_OPTIONS.find(domain => 
+          domain.toLowerCase() === inputDomain
+        );
+        
+        if (matchedDomain) {
+          return { username, domain: matchedDomain };
+        }
+      }
+    }
+    
+    // If not a valid email or domain doesn't match, return null
+    return null;
+  };
+
   const handleUserSubmit = async () => {
-    const user = userInput.toLowerCase().trim();
+    const user = userInput?.toLowerCase().trim();
     if (user && !loading) {
       console.log(user);
       setLoading(true);
@@ -373,17 +402,21 @@ function App() {
 
   const handleGenerate = () => {
     setUserInput(randomUser());
-          // Disable auto-refresh when generating new username
-      if (autoRefresh) {
-        setAutoRefresh(false);
-        setCountdown(0);
-        setAutoRefreshStartTime(null);
-        // showNotification("info", "Auto-refresh disabled due to username change");
-      }
+    // Disable auto-refresh when generating new username
+    if (autoRefresh) {
+      setAutoRefresh(false);
+      setCountdown(0);
+      setAutoRefreshStartTime(null);
+      // showNotification("info", "Auto-refresh disabled due to username change");
+    }
   };
 
   const handleCopy = () => {
-    const user = userInput.toLowerCase().trim();
+    const user = userInput?.toLowerCase().trim();
+    if (!user) {
+      showNotification("warning", "Please enter a username first");
+      return;
+    }
     const email = `${user}${domain}`;
     navigator.clipboard.writeText(email);
     showNotification("success", "Copied: " + email);
@@ -393,7 +426,11 @@ function App() {
     if (loading) return;
 
     setLoading(true);
-    const user = userInput.toLowerCase().trim();
+    const user = userInput?.toLowerCase().trim();
+    if (!user) {
+      setLoading(false);
+      return;
+    }
     const email = `${user}${domain}`;
     const data = await fetchEmails(email, currentPage, mailsPerPage);
     
@@ -426,7 +463,11 @@ function App() {
     if (loading) return;
 
     setLoading(true);
-    const user = userInput.toLowerCase().trim();
+    const user = userInput?.toLowerCase().trim();
+    if (!user) {
+      setLoading(false);
+      return;
+    }
     const email = `${user}${domain}`;
     const data = await fetchEmails(email, page, mailsPerPage);
     
@@ -464,7 +505,7 @@ function App() {
   const fetchEmails = async (user: string, page: number, limit: number) => {
     try {
       const res = await axios.get(
-        `https://stalwart-backend.onrender.com/emails?user=${user}&page=${page}&limit=${limit}`
+        `https://mailpro.brosupdigital.com/emails?user=${user}&page=${page}&limit=${limit}`
       );
       const data = await res.data;
       if (Array.isArray(data.emails)) {
@@ -480,7 +521,7 @@ function App() {
   const checkOrCreateUser = async (email: string) => {
     try {
       const res = await axios.post(
-        "https://stalwart-backend.onrender.com/create-user",
+        "https://mailpro.brosupdigital.com/create-user",
         { email }
       );
       const data = await res.data;
@@ -495,7 +536,7 @@ function App() {
   const createMultipleEmails = async (quantity: number, domain: string) => {
     try {
       const res = await axios.post(
-        "https://stalwart-backend.onrender.com/create-multiple-emails",
+        "https://mailpro.brosupdigital.com/create-multiple-emails",
         { quantity, domain }
       );
       return res.data;
@@ -857,8 +898,24 @@ function App() {
                   >
                     <AutoComplete
                       value={userInput}
-                      onChange={setUserInput}
-                      placeholder="Username"
+                      onChange={(value) => {
+                        setUserInput(value);
+                        
+                        // Parse email if user pastes a complete email
+                        const parsed = parseEmail(value);
+                        if (parsed) {
+                          setUserInput(parsed.username);
+                          setDomain(parsed.domain);
+                          
+                          // Disable auto-refresh when user changes input
+                          if (autoRefresh) {
+                            setAutoRefresh(false);
+                            setCountdown(0);
+                            setAutoRefreshStartTime(null);
+                          }
+                        }
+                      }}
+                      placeholder="Username or paste full email"
                       size="large"
                       allowClear
                       style={{
@@ -887,7 +944,16 @@ function App() {
                     />
                     <Select
                       value={domain}
-                      onChange={setDomain}
+                      onChange={(value) => {
+                        setDomain(value);
+                        
+                        // Disable auto-refresh when user changes domain
+                        if (autoRefresh) {
+                          setAutoRefresh(false);
+                          setCountdown(0);
+                          setAutoRefreshStartTime(null);
+                        }
+                      }}
                       size="large"
                       style={{
                         minWidth: 120,
@@ -935,7 +1001,7 @@ function App() {
                         onClick={handleRefresh}
                         size="large"
                         loading={loading}
-                        disabled={!userInput.trim() || loading}
+                        disabled={!userInput?.trim() || loading}
                         style={{ 
                           color: "#ef4444", 
                           padding: "0 12px",
@@ -1039,7 +1105,7 @@ function App() {
                       size="large"
                       onClick={handleUserSubmit}
                       loading={loading}
-                      disabled={!userInput.trim() || loading}
+                      disabled={!userInput?.trim() || loading}
                       style={{
                         background: "#ef4444",
                         borderColor: "#ef4444",
@@ -1560,7 +1626,7 @@ function App() {
                       </Text>
                       <InputNumber
                         min={1}
-                        max={100}
+                        max={1000}
                         value={quantity}
                         onChange={(value) => setQuantity(value || 1)}
                         size="large"
@@ -1583,7 +1649,16 @@ function App() {
                       </Text>
                       <Select
                         value={domain}
-                        onChange={setDomain}
+                        onChange={(value) => {
+                          setDomain(value);
+                          
+                          // Disable auto-refresh when user changes domain
+                          if (autoRefresh) {
+                            setAutoRefresh(false);
+                            setCountdown(0);
+                            setAutoRefreshStartTime(null);
+                          }
+                        }}
                         size="large"
                         style={{ 
                           width: 200,
@@ -1602,7 +1677,7 @@ function App() {
                     icon={<PlusOutlined />}
                     onClick={handleMultiCreate}
                     loading={loading}
-                    disabled={loading || quantity < 1 || quantity > 100}
+                    disabled={loading || quantity < 1 || quantity > 1000}
                     size="large"
                     style={{
                       background: "#ef4444",
