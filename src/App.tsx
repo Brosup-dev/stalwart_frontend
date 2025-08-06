@@ -915,7 +915,7 @@ function App() {
                           }
                         }
                       }}
-                      placeholder="Username or paste full email"
+                      placeholder="Enter email"
                       size="large"
                       allowClear
                       style={{
