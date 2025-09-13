@@ -1,4 +1,4 @@
-import { Card, Form, Input, Button, Typography, Space, App, Spin } from 'antd';
+import { Card, Form, Input, Button, Typography, Space, App } from 'antd';
 import { EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import { useState, useEffect } from 'react';
@@ -70,7 +70,7 @@ const getSession = () => {
 
 
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 function LoginPageContent({ onLogin }: { onLogin: (userData: { fullName: string; expiryDate: string }) => void }) {
   const [loading, setLoading] = useState(false);
