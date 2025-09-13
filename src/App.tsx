@@ -537,10 +537,28 @@ function App() {
     try {
       const res = await axios.post(
         "https://mailpro.brosupdigital.com/create-multiple-emails",
-        { quantity, domain }
+        { quantity, domain },
+        {
+          timeout: 90000, // 90 seconds - under Cloudflare's 100s limit
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        }
       );
       return res.data;
     } catch (err) {
+      console.error('Create multiple emails error:', err);
+      if (axios.isAxiosError(err)) {
+        if (err.code === 'ECONNABORTED' || err.message.includes('timeout')) {
+          throw new Error('Request timeout - Cloudflare limit reached. Try with fewer emails or wait.');
+        }
+        if (err.response?.status === 429) {
+          throw new Error('Too many requests. Please wait and try again.');
+        }
+        if (err.response?.status && err.response.status >= 500) {
+          throw new Error('Server error. Please try again later.');
+        }
+      }
       throw err;
     }
   };
@@ -829,16 +847,16 @@ function App() {
             />
             <Space style={{ alignItems: "center" }}>
               <Avatar
-                src={`https://api.dicebear.com/9.x/adventurer/svg?seed=${
-                  userData?.fullName || "User"
-                }`}
-                style={{ borderRadius: "50%", border: "1px solid #d9d9d9" }}
+                src={`https://ui-avatars.com/api/?name=${encodeURIComponent(userData?.fullName || 'User')}`}
+                style={{ borderRadius: "50%", border: "1px solidrgb(119, 95, 95)" }}
                 size={36}
               />
               <Dropdown menu={userMenu} placement="bottomRight">
                 <Button
                   type="text"
                   style={{
+                    paddingRight: "0px",
+                    paddingLeft: "0px",
                     display: "flex",
                     alignItems: "center",
                     color: isDark ? "#e0e0e0" : "#000000",

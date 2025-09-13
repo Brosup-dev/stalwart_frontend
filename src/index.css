@@ -45,3 +45,27 @@ body {
   width: 32px;
   object-fit: contain;
 }
+
+/* White placeholder for login input */
+.white-placeholder input::placeholder {
+  color: white !important;
+  opacity: 1 !important;
+}
+
+/* Loading spinner animation */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Hover */
+.ant-input-affix-wrapper:hover {
+  border-color: red !important;
+}
+
+/* Focus */
+.ant-input-affix-wrapper:focus,
+.ant-input-affix-wrapper-focused {
+  border-color: red !important;
+  box-shadow: 0 0 0 2px rgba(255, 0, 0, 0.2); /* viền đỏ nhạt */
+}

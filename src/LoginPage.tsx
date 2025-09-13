@@ -1,4 +1,4 @@
-import { Card, Form, Input, Button, Typography, Space, App } from 'antd';
+import { Card, Form, Input, Button, Typography, Space, App, Spin } from 'antd';
 import { EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import { useState, useEffect } from 'react';
@@ -22,7 +22,7 @@ const LOCKOUT_TIME = 15 * 60 * 1000; // 15 minutes
 const checkKey = async (key: string): Promise<LicenseResponse> => {
   try {
     const response = await axios.post<LicenseResponse>(
-      'https://stalwart-backend.onrender.com/verify-license',
+      'https://mailpro.brosupdigital.com/verify-license',
       { method: 'web', key },
       {
         headers: {
@@ -77,6 +77,9 @@ function LoginPageContent({ onLogin }: { onLogin: (userData: { fullName: string;
   const [status, setStatus] = useState<string | null>(null);
   const [loginAttempts, setLoginAttempts] = useState(0);
   const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
+  const [imageLoading, setImageLoading] = useState(true);
+  const [videoLoading, setVideoLoading] = useState(true);
+  const [showLoading, setShowLoading] = useState(true);
 
   // Check for existing session on mount
   useEffect(() => {
@@ -98,6 +101,16 @@ function LoginPageContent({ onLogin }: { onLogin: (userData: { fullName: string;
       }
     }
   }, []);
+
+  // Handle smooth loading transition
+  useEffect(() => {
+    if (!imageLoading && !videoLoading) {
+      const timer = setTimeout(() => {
+        setShowLoading(false);
+      }, 500); // Wait for transition to complete
+      return () => clearTimeout(timer);
+    }
+  }, [imageLoading, videoLoading]);
 
   const onFinish = async (values: any) => {
     // Check lockout
@@ -132,7 +145,7 @@ function LoginPageContent({ onLogin }: { onLogin: (userData: { fullName: string;
         setTimeout(() => onLogin({ 
           fullName: result.fullName || 'User', 
           expiryDate: result.expiryDate || 'Unknown' 
-        }), 200);
+        }), 500);
       } else if (result.status === 2) {
         setLoginAttempts(prev => prev + 1);
         const attemptsLeft = MAX_ATTEMPTS - (loginAttempts + 1);
@@ -172,21 +185,107 @@ function LoginPageContent({ onLogin }: { onLogin: (userData: { fullName: string;
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #f5f7fa 0%, #e3e6ed 100%)', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ 
+      minHeight: '100vh', 
+      display: 'flex', 
+      flexDirection: 'column', 
+      position: 'relative',
+      overflow: showLoading ? 'hidden' : 'auto',
+      transition: 'opacity 0.5s ease-out'
+    }}>
+      {/* Full Screen Loading Overlay */}
+      {showLoading && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          backgroundColor: 'rgb(26, 26, 26)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          opacity: (imageLoading || videoLoading) ? 1 : 0,
+          transition: 'opacity 0.5s ease-out',
+          pointerEvents: (imageLoading || videoLoading) ? 'auto' : 'none'
+        }}>
+          <div style={{
+            width: '64px',
+            height: '64px',
+            border: '4px solid #fecaca',
+            borderTop: '4px solid #ef4444',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            marginBottom: '16px'
+          }}></div>
+        </div>
+      )}
+
+      {/* Background Video */}
+      <video 
+        autoPlay 
+        loop 
+        muted 
+        playsInline 
+        style={{ 
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: "100%", 
+          height: "100%", 
+          objectFit: "cover",
+          zIndex: -1
+        }}
+        onLoadedData={() => setVideoLoading(false)}
+        onError={() => setVideoLoading(false)}
+      >
+        <source
+          src="https://gw.alipayobjects.com/v/huamei_gcee1x/afts/video/jXRBRK_VAwoAAAAAAAAAAAAAK4eUAQBr"
+          type="video/mp4"
+        />
+      </video>
+
+      {/* Content Container */}
+      <div style={{ 
+        flex: 1, 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        position: 'relative',
+        zIndex: 1
+      }}>
         <Space direction="vertical" align="center" style={{ width: '100%' }}>
-          <img src="https://i.postimg.cc/d0LRkv0z/Black-color.png" alt="Logo" style={{ width: 200 }} />
-          <Card style={{ minWidth: 350, borderRadius: 18, boxShadow: '0 4px 24px #0001', padding: 0, border: 'none' }}>
-            <Title level={3} style={{ textAlign: 'center', marginBottom: 24, color: '#ef4444', fontWeight: 700, letterSpacing: 1 }}>Sign In</Title>
+          <img 
+            src="https://i.postimg.cc/d0LRkv0z/Black-color.png" 
+            alt="Logo" 
+            style={{ width: 200 }}
+            onLoad={() => setImageLoading(false)}
+            onError={() => setImageLoading(false)}
+          />
+          <Card style={{ minWidth: 350, borderRadius: 18, boxShadow: '0 4px 24px #0001', padding: 0, border: 'none', background: 'transparent' }}>
+            {/* <Title level={3} style={{ textAlign: 'center', marginBottom: 24, color: '#ef4444', fontWeight: 700, letterSpacing: 1 }}>Sign In</Title> */}
             <Form layout="vertical" onFinish={onFinish}>
-              <Form.Item label={<span style={{ fontWeight: 600 }}>License Key</span>} name="key" rules={[{ required: true, message: 'Please enter your licence key!' }]}> 
+              <Form.Item name="key" rules={[{ required: true, message: 'Please enter your licence key!' }]} style={{ textAlign: 'center' }}> 
                 <Input.Password
                   size="large"
                   autoComplete="off"
                   placeholder="Enter your licence key"
-                  style={{ borderRadius: 8, fontWeight: 500 }}
+                  style={{ 
+                    borderRadius: 10, 
+                    fontWeight: 500,
+                    backgroundColor:'rgb(26, 26, 26)',
+                    borderColor: 'transparent',
+                    color: 'white'
+                  }}
+                  className="white-placeholder"
+                  styles={{
+                    input: {
+                      color: 'white'
+                    }
+                  }}
                   iconRender={(visible) => (
-                    visible ? <EyeOutlined /> : <EyeInvisibleOutlined />
+                    visible ? <EyeOutlined style={{ color: 'white' }} /> : <EyeInvisibleOutlined style={{ color: 'white' }} />
                   )}
                 />
               </Form.Item>
@@ -200,13 +299,13 @@ function LoginPageContent({ onLogin }: { onLogin: (userData: { fullName: string;
                   Login attempts: {loginAttempts}/{MAX_ATTEMPTS}
                 </Text>
               )}
-              <Form.Item style={{ marginBottom: 0 }}>
+              <Form.Item style={{ marginBottom: 0 , textAlign:'center'}}>
                 <Button 
                   type="primary" 
                   htmlType="submit" 
                   size="large" 
                   block 
-                  style={{ borderRadius: 8, background: '#ef4444', borderColor: '#ef4444', fontWeight: 700, letterSpacing: 1 }} 
+                  style={{ borderRadius: 8, background: '#ef4444', borderColor: '#ef4444', fontWeight: 700, letterSpacing: 1, width:100}} 
                   loading={loading}
                   disabled={lockoutUntil !== null}
                 >
@@ -220,13 +319,15 @@ function LoginPageContent({ onLogin }: { onLogin: (userData: { fullName: string;
       {/* Footer */}
       <Footer style={{ 
         textAlign: 'center', 
-        borderTop: '1px solid #d9d9d9',
+        borderTop: '1px solid rgba(255, 255, 255, 0.2)',
         padding: '24px',
-        background: 'linear-gradient(135deg, #f5f7fa 0%, #e3e6ed 100%)'
+        background: 'rgba(0, 0, 0, 0.5)',
+        position: 'relative',
+        zIndex: 1
       }}>
         <div style={{ maxWidth: 1200, margin: '0 auto' }}>
           <Space direction="vertical" size="small" style={{ width: '100%' }}>
-            <Text type="secondary" style={{ fontSize: 13, color: '#666666' }}>
+            <Text type="secondary" style={{ fontSize: 13, color: '#ffffff' }}>
               © 2025 Brosup Digital Co., Ltd. All rights reserved.
             </Text>
           </Space>
