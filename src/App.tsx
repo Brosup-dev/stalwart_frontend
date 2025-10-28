@@ -22,6 +22,7 @@ import {
   Alert,
   InputNumber,
   Tag,
+  Skeleton,
 } from "antd";
 import {
   MailOutlined,
@@ -56,6 +57,17 @@ const DOMAIN_OPTIONS = [
   "@brosup.dev",
   "@juboro.com",
   "@lurvon.com",
+  "@sharklasers.com",
+  "@guerrillamail.info",
+  "@grr.la",
+  "@guerrillamail.biz",
+  "@guerrillamail.com",
+  "@guerrillamail.de",
+  "@guerrillamail.net",
+  "@guerrillamail.org",
+  "@guerrillamailblock.com",
+  "@pokemail.net",
+  "@spam4.me",
 ];
 
 // Session management constants
@@ -330,7 +342,6 @@ function App() {
   const handleUserSubmit = async () => {
     const user = userInput?.toLowerCase().trim();
     if (user && !loading) {
-      console.log(user);
       setLoading(true);
       setCheckingStatus("Checking or creating email...");
       const email = `${user}${domain}`;
@@ -384,10 +395,34 @@ function App() {
     }
   };
 
-  const openMail = (mail: any) => {
-    setSelectedMail(mail);
-    setIsModalOpen(true);
-  };
+const openMail = async (mail: any, uid: any) => {
+  setSelectedMail(mail);
+  setIsModalOpen(true);
+
+  // Chỉ gọi API khi domain không thuộc danh sách đặc biệt
+  if (!["@nguyenmail.pro", "@brosup.dev", "@juboro.com", "@lurvon.com"].includes(domain) 
+      && uid !== null && uid !== undefined) {
+    try {
+      // lay cookies PHPSESSID
+        const phpsessid = document.cookie
+          .split('; ')
+          .find(row => row.startsWith('PHPSESSID='))
+          ?.split('=')[1];
+      const res = await axios.get(`http://127.0.0.1:8000/read-guerrilla-email/${uid}?session_id=${phpsessid}`);
+      const data = res.data;
+
+      // Cập nhật body của mail đã chọn
+      setSelectedMail((prev: any) => ({
+      ...prev!,
+      body: data.body
+    }));
+
+    } catch (error) {
+      console.error("Lỗi khi đọc email:", error);
+    }
+  }
+};
+
 
   const handleModalCancel = () => {
     setIsModalOpen(false);
@@ -504,10 +539,22 @@ function App() {
 
   const fetchEmails = async (user: string, page: number, limit: number) => {
     try {
-      const res = await axios.get(
-        `https://mailpro.brosupdigital.com/emails?user=${user}&page=${page}&limit=${limit}`
-      );
+      let res;
+      if (["@nguyenmail.pro", "@brosup.dev", "@juboro.com", "@lurvon.com"].includes(domain)) {
+        res = await axios.get(
+          `https://mailpro.brosupdigital.com/emails?user=${user}&page=${page}&limit=${limit}`
+        ); 
+      } else {
+        // lay cookies PHPSESSID
+        const phpsessid = document.cookie
+          .split('; ')
+          .find(row => row.startsWith('PHPSESSID='))
+          ?.split('=')[1];
+        console.log('Using PHPSESSID:', phpsessid);
+        res = await axios.get(`http://127.0.0.1:8000/get-guerrilla-emails?session_id=${phpsessid}&page=${page}&limit=${limit}`);
+      }
       const data = await res.data;
+      console.log('Fetch emails response:', data);
       if (Array.isArray(data.emails)) {
         return data;
       } else {
@@ -520,11 +567,28 @@ function App() {
 
   const checkOrCreateUser = async (email: string) => {
     try {
-      const res = await axios.post(
+      let res
+      if (["@nguyenmail.pro", "@brosup.dev", "@juboro.com", "@lurvon.com"].includes(domain)) {
+       res = await axios.post(
         "https://mailpro.brosupdigital.com/create-user",
-        { email }
+        { email_user: email }
       );
+    } else {
+      // For guerrillamail, no need to create user, just set the email user
+      res = await axios.post("http://127.0.0.1:8000/create-guerrilla", {
+        f: "set_email_user",
+        email_user: email,
+        lang: "en",
+        ip: "127.0.0.1",
+        agent: "Mozilla"
+      });
+    }
+      console.log('Set email user response:', res.data);
       const data = await res.data;
+      // luu session_id vao cookies
+      if (data.session_id) {
+        document.cookie = `PHPSESSID=${data.session_id}; path=/`;
+      }
       if (data.status === "exists") return "exists";
       if (data.status === "created") return "created";
       return "error";
@@ -1262,7 +1326,7 @@ function App() {
                         : "1px solid #e2e8f0",
                       transition: "all 0.2s ease",
                     }}
-                    onClick={() => openMail(mail)}
+                    onClick={() => openMail(mail,mail.uid)}
                     actions={[
                       <Tooltip key="copy-code" title="Copy verification code">
                         <Button
@@ -1295,7 +1359,7 @@ function App() {
                         icon={<EyeOutlined style={{ color: "#ef4444" }} />}
                         onClick={(e) => {
                           e.stopPropagation();
-                          openMail(mail);
+                          openMail(mail, mail.uid);
                         }}
                         style={{ color: "#ef4444" }}
                       >
@@ -1490,7 +1554,7 @@ function App() {
           closable={true}
           centered={true}
         >
-          {selectedMail && (
+          {selectedMail &&(
             <div style={{ color: isDark ? "#e0e0e0" : "#000000" }}>
               <div style={{ marginBottom: 16 }}>
                 <Space direction="vertical" style={{ width: "100%" }}>
@@ -1569,11 +1633,18 @@ function App() {
                     color: isDark ? "#e0e0e0" : "#000000",
                   }}
                 >
-                  {selectedMail.body}
+                  {selectedMail.body != null ? (
+                    selectedMail.body
+                  ):(
+          //  skeleton loader
+            <div style={{ textAlign: "center", padding: "40px 0" }}>
+               <Skeleton active paragraph={{ rows: 5}} />
+            </div>
+                  )}
                 </Paragraph>
               )}
             </div>
-          )}
+          ) }
         </Modal>
 
         {/* Multi Mail Creation Modal */}
