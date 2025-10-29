@@ -571,7 +571,7 @@ const openMail = async (mail: any, uid: any) => {
       if (["@nguyenmail.pro", "@brosup.dev", "@juboro.com", "@lurvon.com"].includes(domain)) {
        res = await axios.post(
         "https://mailpro.brosupdigital.com/create-user",
-        { email_user: email }
+        { email: email }
       );
     } else {
       // For guerrillamail, no need to create user, just set the email user
